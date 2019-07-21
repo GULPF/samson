@@ -1,0 +1,26 @@
+{
+    "number-invalid": {
+        "error": "[Ln 1, Col 1] Invalid number: 0123",
+        "input": "0123"
+    },
+    "number-unexpected-char": {
+        "error": "[Ln 1, Col 4] Unexpected character: f",
+        "input": "123f"
+    },
+    "array-no-comma": {
+        "error": "[Ln 3, Col 1] Expected ',' but found: f",
+        "input": "[\ntrue\nfalse\n]"
+    },
+    "object-no-colon": {
+        "error": "[Ln 3, Col 3] Expected ':' but found: f",
+        "input": "{\n  true  \n  false  \n}"
+    },
+    "string-invalid-unicode-escape": {
+        "error": "[Ln 1, Col 2] Invalid unicode escape: \\uABDG",
+        "input": "'\\uABDG'"
+    },
+    "string-invalid-decimal-escape": {
+        "error": "[Ln 1, Col 2] Invalid escape: \\8",
+        "input": "'\\8'"
+    }
+}
