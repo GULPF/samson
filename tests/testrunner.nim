@@ -2,6 +2,42 @@ import std / [os, strutils, terminal, json, options, tables]
 import .. / src / samson,
        .. / src / samson / private / [parser, jtrees]
 
+proc `$`(t: JTree, idx: JNodeIdx): string =
+  let n = t.nodes[idx]
+  case n.kind
+  of nkArray:
+    result.add "["
+    for idx, itemIdx in n.items:
+      if idx > 0:
+        result.add ", "
+      result.add `$`(t, itemIdx)
+    result.add "]"
+  of nkObject:
+    result.add "{"
+    for key, valIdx in n.kvpairs:
+      result.add toJson5(key)
+      result.add ": "
+      result.add `$`(t, valIdx)
+      result.add ", "
+    if n.kvpairs.len > 0:
+      result.setLen(result.len - 2)
+    result.add "}"
+  of nkNumber:
+    result = toJson5(n.numVal)
+  of nkInt64:
+    result = toJson5(n.int64Val)
+  of nkString:
+    result = toJson5(n.strVal)
+  of nkBool:
+    result = toJson5(n.boolVal)
+  of nkNull:
+    result = toJson5(none(bool))
+  of nkEmpty:
+    discard
+
+proc `$`(t: JTree): string =
+  `$`(t, 0)
+
 block:
   styledEcho fgBlue, "Running official tests\n"
   var pass = 0

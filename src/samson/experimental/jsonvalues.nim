@@ -1,18 +1,5 @@
 import std / [tables, macros]
 
-#[
-    The idea is to support something like this for dynamic stuff:
-
-    let str = toJson5(buildJsonValue({
-        ...jv,
-        newfield: value,
-        newfield2: [...jv2, val2]
-    }))
-
-    Note here that `...` will be treated as a magic identifier in the macro.
-    IMO that's fine for this case, since it's unlikely to clash with anything.
-]#
-
 type
     JsonValueKind* = enum
         jsonInteger
@@ -118,13 +105,13 @@ proc `==`*(a, b: JsonValue): bool =
 
 let emptyObject = JsonValue(kind: jsonObject)
 
-proc transformNode(x: NimNode): NimNode =
+proc transformToJsonValue(x: NimNode): NimNode =
     let ijv = bindSym"initJsonValue"
     case x.kind
     of nnkBracket:
         let arrNode = newNimNode(nnkBracket)
         for n in x:
-            arrNode.add transformNode(n)
+            arrNode.add transformToJsonValue(n)
         result = newCall(ijv, arrNode)
     of nnkCurly:
         doAssert x.len == 0
@@ -137,17 +124,12 @@ proc transformNode(x: NimNode): NimNode =
         for i in countup(0, len(n)-1, 2):
             expectKind(n[i], nnkStrLit)
             pairs.add(n[i])
-            pairs.add(transformNode(n[i+1]))
+            pairs.add(transformToJsonValue(n[i+1]))
         result = newCall(ijv, newCall(bindSym"toOrderedTable", objNode))
     else:
         result = newCall(ijv, x)
-    # echo x.treeRepr    
-    # echo result.repr
-    # echo "- - -"
 
 macro buildJsonValue*(x: untyped): JsonValue =
     ## The `buildJsonValue` macro can be used to construct
     ## JsonValues using a syntax similiar to JSON itself.
-    result = transformNode(x)
-
-# echo buildJsonValue({"field": [1, "two"]})
+    result = transformToJsonValue(x)
