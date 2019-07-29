@@ -91,6 +91,10 @@ Samson also supports custom `object` (mapped to objects in JSON5) and `tuple` (m
 
 ## Generated docs
 
+- [samson module](https://gulpf.github.io/samson/samson.html)
+- [samson/errors module](https://gulpf.github.io/samson/errors.html)
+- [samson/pragmas module](https://gulpf.github.io/samson/pragmas.html)
+
 ## Planned features
 
 - Stream based API.
