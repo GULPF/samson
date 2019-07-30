@@ -153,6 +153,8 @@ proc addJson5[T](result: var string, value: T) =
     result.addJson5DateTime(value)
   elif T is string:
     result.addJson5String(value)
+  elif T is char:
+    result.addJson5String($value)
   elif T is PlainObject:
     result.add "{"
     for fieldName, fieldSym in value.fieldPairs:
@@ -259,6 +261,12 @@ proc fromJson5Impl(tree: JTree, idx: JNodeIdx, T: typedesc): T =
       error()
     else:
       shallowCopy(result, tree.nodes[idx].strVal)
+  elif T is char:
+    if tree.nodes[idx].kind != nkString or
+        tree.nodes[idx].strVal.len != 1:
+      error()
+    else:
+      result = tree.nodes[idx].strVal[0]
   elif T is range:
     type UnderlyingType = rangeUnderlyingType(T)
     when UnderlyingType is Ordinal:

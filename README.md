@@ -76,6 +76,8 @@ The following types in the standard library have special support in Samson:
 - `int8`, `int16`, `int32`, `int`, and `int64`
 - `uint8`, `uint16`, and `uint32` (note: `uint` and `uint64` are not supported for now)
 - `float32` and `float64`
+- `string`
+- `char`
 - `enum`
 - `seq`
 - `array`

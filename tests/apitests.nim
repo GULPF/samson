@@ -11,6 +11,10 @@ suite "fromJson5":
   test "string":
     check fromJson5("\"foo\"", string) == "foo"
 
+  test "char":
+    check fromJson5("'a'", char) == 'a'
+    expect(JsonSchemaError): discard fromJson5("'ab'", char)
+
   test "bool":
     check fromJson5("true", bool) == true
     check fromJson5("false", bool) == false
@@ -158,6 +162,9 @@ suite "toJson5":
 
   test "string":
     check toJson5("foo") == "\"foo\""
+
+  test "char":
+    check toJson5('a') == "\"a\""
 
   test "bool":
     check toJson5(true) == "true"
