@@ -12,8 +12,8 @@ type
     tkString
     tkNumber
     tkInt64
-    tkLineComment
-    tkBlockComment
+    tkLineComment # Unused
+    tkBlockComment # Unused
     tkIdent
     tkEoi
 
@@ -387,7 +387,7 @@ proc parseIdentifier(l: var Lexer): Token =
 proc next*(l: var Lexer): Token =
   template singleCharToken(k: TokenKind) =
     l.pos.inc
-    return Token(kind: k)
+    return Token(kind: k, pos: tokenStartPos)
 
   l.skipWhitespace()
   let tokenStartPos = l.pos
@@ -445,6 +445,20 @@ proc tokenize*(input: string): seq[Token] =
     result.add tok
     if tok.kind == tkEoi:
       break
+
+proc `$`*(tok: Token): string =
+  case tok.kind
+  of tkBracketL: "["
+  of tkBracketR: "]"
+  of tkBraceL: "{"
+  of tkBraceR: "}"
+  of tkColon: ":"
+  of tkComma: ","
+  of tkString: '"' & tok.strVal & '"'
+  of tkNumber: $tok.numVal # NOTE: str->float->str might not give the original string
+  of tkInt64: $tok.int64Val
+  of tkLineComment, tkBlockComment, tkEoi: raiseAssert("Unexpected token")
+  of tkIdent: tok.ident
 
 proc `$`*(x: seq[Token]): string =
   for t in x:

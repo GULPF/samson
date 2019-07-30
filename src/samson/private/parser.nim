@@ -53,7 +53,7 @@ proc parseValue(p: var Parser, jtree: var JTree): int =
         of tkString: shallowCopy(key, p.tok.strVal)
         of tkIdent:  shallowCopy(key, p.tok.ident)
         else:
-          p.l.error("Expected valid object key, but found: " & $p.tok)
+          p.l.error(p.tok.pos, "Expected string or identifier but found: " & $p.tok)
         p.next()
 
         if p.tok.kind != tkColon:
@@ -73,7 +73,7 @@ proc parseValue(p: var Parser, jtree: var JTree): int =
           p.next()
           break
         else:
-          p.l.error("Expected ',' or '}' but found: " & $p.tok)
+          p.l.error(p.tok.pos, "Expected ',' or '}' but found: " & $p.tok)
 
   of tkNumber:
     reserveNode(JNode(kind: nkNumber, numVal: p.tok.numVal))
@@ -101,7 +101,7 @@ proc parseValue(p: var Parser, jtree: var JTree): int =
     of "null":
       reserveNode(JNode(kind: nkNull))
     else:
-      p.l.error("Unexpected identifier: " & p.tok.ident)
+      p.l.error(p.tok.pos, "Unexpected identifier: " & p.tok.ident)
     p.next()
 
   else:

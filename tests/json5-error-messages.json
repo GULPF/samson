@@ -15,6 +15,14 @@
         "error": "[Ln 3, Col 3] Expected ':' but found: f",
         "input": "{\n  true  \n  false  \n}"
     },
+    "object-no-comma": {
+        "error": "[Ln 1, Col 8] Expected ',' or '}' but found: yy",
+        "input": "{xx: 1 yy: 2}"
+    },
+    "object-double-comma": {
+        "error": "[Ln 1, Col 7] Expected string or identifier but found: ,",
+        "input": "{x: 1,, y: 2}"
+    },
     "string-invalid-unicode-escape": {
         "error": "[Ln 1, Col 2] Invalid unicode escape: \\uABDG",
         "input": "'\\uABDG'"
