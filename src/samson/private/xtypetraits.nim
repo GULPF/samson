@@ -29,6 +29,6 @@ macro tupleLen*(typ: typedesc[tuple]): int =
 macro rangeUnderlyingType*(typ: typedesc[range]): typedesc =
   ## Returns the underlying type of a range.
   runnableExamples:
-    doAssert rangeUnderlyingType(range[1'i8..2'i8]) == int8
-    doAssert rangeUnderlyingType(range[1.0..2.0]) == float
+    doAssert rangeUnderlyingType(range[1'i8..2'i8]) is int8
+    doAssert rangeUnderlyingType(range[1.0..2.0]) is float
   result = getType(getType(typ)[1][1])

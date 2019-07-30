@@ -4,6 +4,9 @@ import
   .. / src / samson / pragmas,
   .. / src / samson / experimental / [eithers, jsonvalues]
 
+template reject(body: untyped) =
+  check not compiles(body)
+
 suite "fromJson5":
   test "string":
     check fromJson5("\"foo\"", string) == "foo"
@@ -300,6 +303,9 @@ suite "JsonValue":
     }.toOrderedTable)
 
 suite "misc":
+
+  test "errors":
+    reject fromJson5("null", Table[int, int])
 
   test "Invalid UTF-8":
     let badString = "'\xC0\xC0\xC0'"

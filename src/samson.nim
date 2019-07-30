@@ -41,6 +41,11 @@ proc schemaError(expected: typedesc, actual: string) {.noReturn.} =
   raise newException(JsonSchemaError, "Failed to deserialize to type. " &
     "Expected " & $expected & " but found " & actual)
 
+# Used for better error messages
+proc `$`(t: JTree, idx: JNodeIdx): string
+
+# Nim->JSON5
+
 proc addJson5String(result: var string, value: string) =
   result.add '\"'
   var pos = 0
@@ -175,6 +180,8 @@ proc addJson5[T](result: var string, value: T) =
     result.add "]"
   else:
     {.error: "Unsupported type: " & $T.}
+
+# JSON5->Nim
 
 proc dateTimeFromJson5(tree: JTree, idx: JnodeIdx,
     T: typedesc[DateTime|Time], f: string = DefaultDateTimeFormat): T =
@@ -368,3 +375,36 @@ proc fromJson5*(input: string, T: typedesc): T =
     doAssert fromJson5(input, Obj) == Obj(field1: 1234, field2: "foobar")
   let tree = parseJson5(input)
   result = fromJson5Impl(tree, 0, T)
+
+proc `$`(t: JTree, idx: JNodeIdx): string =
+  let n = t.nodes[idx]
+  case n.kind
+  of nkArray:
+    result.add "["
+    for idx, itemIdx in n.items:
+      if idx > 0:
+        result.add ", "
+      result.add `$`(t, itemIdx)
+    result.add "]"
+  of nkObject:
+    result.add "{"
+    for key, valIdx in n.kvpairs:
+      result.add toJson5(key)
+      result.add ": "
+      result.add `$`(t, valIdx)
+      result.add ", "
+    if n.kvpairs.len > 0:
+      result.setLen(result.len - 2)
+    result.add "}"
+  of nkNumber:
+    result = toJson5(n.numVal)
+  of nkInt64:
+    result = toJson5(n.int64Val)
+  of nkString:
+    result = toJson5(n.strVal)
+  of nkBool:
+    result = toJson5(n.boolVal)
+  of nkNull:
+    result = toJson5(none(bool))
+  of nkEmpty:
+    discard
