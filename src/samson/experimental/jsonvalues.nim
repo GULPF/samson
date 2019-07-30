@@ -1,4 +1,4 @@
-import std / [tables, macros]
+import std / [tables]
 
 type
     JsonValueKind* = enum
@@ -102,34 +102,3 @@ proc `==`*(a, b: JsonValue): bool =
         a.objVal == b.objVal
     of jsonNull:
         true
-
-let emptyObject = JsonValue(kind: jsonObject)
-
-proc transformToJsonValue(x: NimNode): NimNode =
-    let ijv = bindSym"initJsonValue"
-    case x.kind
-    of nnkBracket:
-        let arrNode = newNimNode(nnkBracket)
-        for n in x:
-            arrNode.add transformToJsonValue(n)
-        result = newCall(ijv, arrNode)
-    of nnkCurly:
-        doAssert x.len == 0
-        result = bindSym"emptyObject"
-    of nnkTableConstr:
-        let objNode = newNimNode(nnkTableConstr)
-        let pairs = newNimNode(nnkExprColonExpr)
-        objNode.add(pairs)
-        let n = x[0]
-        for i in countup(0, len(n)-1, 2):
-            expectKind(n[i], nnkStrLit)
-            pairs.add(n[i])
-            pairs.add(transformToJsonValue(n[i+1]))
-        result = newCall(ijv, newCall(bindSym"toOrderedTable", objNode))
-    else:
-        result = newCall(ijv, x)
-
-macro buildJsonValue*(x: untyped): JsonValue =
-    ## The `buildJsonValue` macro can be used to construct
-    ## JsonValues using a syntax similiar to JSON itself.
-    result = transformToJsonValue(x)

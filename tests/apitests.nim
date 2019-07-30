@@ -283,24 +283,25 @@ suite "JsonValue":
     doAssert initJsonValue(1.0).kind == jsonInteger
     doAssert initJsonValue(1.0) == initJsonValue(1'i64)
 
-  test "buildJsonValue":
-    check buildJsonValue(1) == initJsonValue(1)
-    check buildJsonValue("abc") == initJsonValue("abc")
-    check buildJsonValue([1, "foo"]) == initJsonValue([
-      initJsonValue(1), initJsonValue("foo")
-    ])
-    check buildJsonValue({}) == initJsonValue(initOrderedTable[string, JsonValue]())
-    check buildJsonValue([1, nil]) == initJsonvalue([
-      initJsonValue(1), initJsonValue(nil)
-    ])
-    check buildJsonValue({"foo": 1}) == initJsonvalue({
-      "foo": initJsonValue(1)
-    }.toOrderedTable)
-    check buildJsonValue({"foo": [1, "two"]}) == initJsonvalue({
-      "foo": initJsonValue([
-        initJsonValue(1), initJsonValue("two")
+  when false:
+    test "buildJsonValue":
+      check buildJsonValue(1) == initJsonValue(1)
+      check buildJsonValue("abc") == initJsonValue("abc")
+      check buildJsonValue([1, "foo"]) == initJsonValue([
+        initJsonValue(1), initJsonValue("foo")
       ])
-    }.toOrderedTable)
+      check buildJsonValue({}) == initJsonValue(initOrderedTable[string, JsonValue]())
+      check buildJsonValue([1, nil]) == initJsonvalue([
+        initJsonValue(1), initJsonValue(nil)
+      ])
+      check buildJsonValue({"foo": 1}) == initJsonvalue({
+        "foo": initJsonValue(1)
+      }.toOrderedTable)
+      check buildJsonValue({"foo": [1, "two"]}) == initJsonvalue({
+        "foo": initJsonValue([
+          initJsonValue(1), initJsonValue("two")
+        ])
+      }.toOrderedTable)
 
 suite "misc":
 

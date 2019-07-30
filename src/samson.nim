@@ -181,6 +181,10 @@ proc addJson5[T](result: var string, value: T) =
   else:
     {.error: "Unsupported type: " & $T.}
 
+# This needs to be implemented as an overload due to limitations in Nim
+proc addJson5(result: var string, value: type(nil)) =
+  result.add "null"
+
 # JSON5->Nim
 
 proc dateTimeFromJson5(tree: JTree, idx: JnodeIdx,
@@ -375,6 +379,45 @@ proc fromJson5*(input: string, T: typedesc): T =
     doAssert fromJson5(input, Obj) == Obj(field1: 1234, field2: "foobar")
   let tree = parseJson5(input)
   result = fromJson5Impl(tree, 0, T)
+
+# buildJson
+
+proc transformToJson(stmts, resultNode, x: NimNode) =
+  let addJ5Sym = bindSym"addJson5"
+  case x.kind
+  of nnkBracket:
+    stmts.add newCall(bindSym"add", resultNode, newLit"[")
+    for n in x:
+      transformToJson(stmts, resultNode, n)
+      stmts.add newCall(bindSym"add", resultNode, newLit", ")
+    if x.len > 0:
+      stmts.del(stmts.len - 1)
+    stmts.add newCall(bindSym"add", resultNode, newLit"]")
+  of nnkCurly:
+    doAssert x.len == 0
+    stmts.add newCall(bindSym"add", resultNode, newLit"{}")    
+  of nnkTableConstr:
+    stmts.add newCall(bindSym"add", resultNode, newLit"{")
+    for n in x:
+      expectKind(n[0], nnkStrLit)
+      transformToJson(stmts, resultNode, n[0])      
+      stmts.add newCall(bindSym"add", resultNode, newLit": ")      
+      transformToJson(stmts, resultNode, n[1])
+      stmts.add newCall(bindSym"add", resultNode, newLit", ")
+    if x.len > 0:
+      stmts.del(stmts.len - 1)
+    stmts.add newCall(bindSym"add", resultNode, newLit"}")
+  else:
+    stmts.add newCall(addJ5Sym, resultNode, x)
+
+# Will be exported in the future.
+macro buildJson(x: untyped): string =
+  ## The `buildJsonValue` macro can be used to construct
+  ## JSON using a syntax similiar to JSON itself.
+  let resultSym = genSym(nskVar)
+  result = newBlockStmt(newStmtList(newVarStmt(resultSym, newLit(""))))
+  transformToJson(result[1], resultSym, x)
+  result[1].add resultSym
 
 proc `$`(t: JTree, idx: JNodeIdx): string =
   let n = t.nodes[idx]
