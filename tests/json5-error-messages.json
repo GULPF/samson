@@ -7,12 +7,20 @@
         "error": "[Ln 1, Col 4] Unexpected character: f",
         "input": "123f"
     },
+    "comment-unclosed": {
+        "error": "[Ln 1, Col 4] Unclosed block comment",
+        "input": "12 /* test"
+    },
     "array-no-comma": {
-        "error": "[Ln 3, Col 1] Expected ',' but found: f",
+        "error": "[Ln 3, Col 1] Expected ',' or ']' but found: false",
         "input": "[\ntrue\nfalse\n]"
     },
+    "array-double-comma": {
+        "error": "[Ln 3, Col 2] Expected value but found: ,",
+        "input": "[\ntrue,\n ,false\n]"
+    },
     "object-no-colon": {
-        "error": "[Ln 3, Col 3] Expected ':' but found: f",
+        "error": "[Ln 3, Col 3] Expected ':' but found: false",
         "input": "{\n  true  \n  false  \n}"
     },
     "object-no-comma": {
@@ -30,5 +38,9 @@
     "string-invalid-decimal-escape": {
         "error": "[Ln 1, Col 2] Invalid escape: \\8",
         "input": "'\\8'"
+    },
+    "string-unclosed": {
+        "error": "[Ln 2, Col 1] Unclosed string",
+        "input": "\n'foo"
     }
 }

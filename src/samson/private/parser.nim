@@ -36,8 +36,7 @@ proc parseValue(p: var Parser, jtree: var JTree): int =
           p.next()
           break
         else:
-          p.l.error(p.tok.pos, "Expected ',' but found: " &
-            characterAt(p.l.input, p.tok.pos))
+          p.l.error(p.tok.pos, "Expected ',' or ']' but found: " & $p.tok)
 
   of tkBraceL:
     p.next()
@@ -57,8 +56,7 @@ proc parseValue(p: var Parser, jtree: var JTree): int =
         p.next()
 
         if p.tok.kind != tkColon:
-          p.l.error(p.tok.pos, "Expected ':' but found: " &
-            characterAt(p.l.input, p.tok.pos))
+          p.l.error(p.tok.pos, "Expected ':' but found: " & $p.tok)
         p.next()
 
         let nodeIdx = p.parseValue(jtree)
@@ -101,11 +99,11 @@ proc parseValue(p: var Parser, jtree: var JTree): int =
     of "null":
       reserveNode(JNode(kind: nkNull))
     else:
-      p.l.error(p.tok.pos, "Unexpected identifier: " & p.tok.ident)
+      p.l.error(p.tok.pos, "Expected value but found identifier: " & p.tok.ident)
     p.next()
 
   else:
-    raiseAssert($p.tok.kind)
+    p.l.error(p.tok.pos, "Expected value but found: " & $p.tok)
 
 proc parseJson5*(input: string): JTree =
   var p = Parser(l: initLexer(input))

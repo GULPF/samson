@@ -2,6 +2,8 @@ import std / [os, strutils, terminal, json, options, tables]
 import .. / src / samson,
        .. / src / samson / private / [parser, jtrees]
 
+var allOk = true
+
 proc `$`(t: JTree, idx: JNodeIdx): string =
   let n = t.nodes[idx]
   case n.kind
@@ -63,6 +65,7 @@ block:
       except Exception:
         pass.inc
 
+  allOk = allOk and fail == 0
   echo "PASS: " & $pass & " / " & $(pass + fail)
 
 echo ""
@@ -98,6 +101,8 @@ block:
         fail.inc
       else:
         pass.inc
+  
+  allOk = allOk and fail == 0  
   echo "PASS: " & $pass & " / " & $(pass + fail)
 
 echo ""
@@ -154,6 +159,7 @@ block:
     else:
       pass.inc
 
+  allOk = allOk and fail == 0
   echo "PASS: " & $pass & " / " & $(pass + fail)
 
 echo ""
@@ -161,3 +167,6 @@ echo ""
 styledEcho fgBlue, "Running API tests"
 
 include apitests
+
+if not allOk:
+  styledEcho fgRed, "= = = = = = =\nTests failed\n= = = = = = ="

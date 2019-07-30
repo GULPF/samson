@@ -252,9 +252,12 @@ proc parseNumber(l: var Lexer): Token =
 proc parseString(l: var Lexer): Token =
   var tok = Token(kind: tkString)
   let terminator = l.head
+  let startOfString = l.pos
   l.pos.inc
   while true:
-    if l.head == terminator:
+    if l.pos > l.input.high:
+      l.error(startOfString, "Unclosed string")
+    elif l.head == terminator:
       l.pos.inc
       break
     elif l.head == '\\':
@@ -322,7 +325,7 @@ proc parseString(l: var Lexer): Token =
         l.pos.inc len
     elif l.head <= 127.char:
       if l.head in {LF, CR}:
-        l.error("Found unclosed string")
+        l.error(startOfString, "Unclosed string")
       tok.strVal.add l.head
       l.pos.inc
     else:
@@ -343,7 +346,7 @@ proc parseIdentifier(l: var Lexer): Token =
   of '\\':
     l.pos.inc
     if l.eoi or l.head != 'u':
-      l.error("Unexpected character: \\")
+      l.error(l.pos - 1, "Unexpected character: \\")
     l.pos.inc
     let rune = l.parseUnicodeHex(ndigits = 4)
     if not isIdentStart(rune):
@@ -364,7 +367,7 @@ proc parseIdentifier(l: var Lexer): Token =
     of '\\':
       l.pos.inc
       if l.eoi or l.head != 'u':
-        l.error("Unexpected character: \\")
+        l.error(l.pos - 1, "Unexpected character: \\")
       l.pos.inc
       var hexStr = ""
       for i in 0 .. 3:
@@ -415,16 +418,17 @@ proc next*(l: var Lexer): Token =
           return l.next()
         l.pos.inc
     of '*':
+      let startPos = l.pos - 1
       while true:
         # Need two chars to end a block comment
         if l.pos > l.input.high - 1:
-          l.error("Unexpected end of input")
+          l.error(startPos, "Unclosed block comment")
         elif l.head == '*' and l.input[l.pos + 1] == '/':
           l.pos.inc 2
           return l.next()
         l.pos.inc
     else:
-      l.error("Unexpected character: " & l.head)
+      l.error(l.pos - 1, "Unexpected character: /")
 
   of '"', '\'':
     result = l.parseString()
