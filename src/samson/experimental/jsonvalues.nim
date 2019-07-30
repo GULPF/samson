@@ -2,12 +2,12 @@ import std / [tables]
 
 type
   JsonValueKind* = enum
+    jsonNull
     jsonInteger
     jsonFloat
     jsonString
     jsonArray
     jsonObject
-    jsonNull
 
   JsonValue* = object
     case kind: JsonValueKind
