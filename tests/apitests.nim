@@ -160,6 +160,11 @@ suite "fromJson5":
 
 suite "toJson5":
 
+  test "JsonValue":
+    check toJson5(initJsonValue(nil)) == "null"
+    check toJson5(initJsonValue(1)) == "1"
+    check toJson5(initJsonValue("foo")) == "\"foo\""
+
   test "string":
     check toJson5("foo") == "\"foo\""
 

@@ -8,7 +8,7 @@
 import std / [unicode, strutils, tables, math, options, macros, times, sets]
 import samson / private / [jtrees, parser, lexer, xunicode, xtypetraits],
   samson / [pragmas, errors],
-  samson / experimental / eithers
+  samson / experimental / [eithers, jsonvalues]
 
 export errors
 
@@ -106,6 +106,20 @@ proc addJson5[T](result: var string, value: T) =
       result.addJson5(value.get)
     else:
       result.add "null"
+  elif T is JsonValue:
+    case value.kind
+    of jsonNull:
+      result.add "null"
+    of jsonInteger:
+      result.add $value.getInt64
+    of jsonFloat:
+      result.addJson5 value.getFloat
+    of jsonString:
+      result.addJson5 value.getString
+    of jsonArray:
+      result.addJson5 value.getSeq
+    of jsonObject:
+      result.addJson5 value.getTable
   elif T is Either:
     type A = T.generic(0)
     type B = T.generic(1)
