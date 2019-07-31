@@ -110,9 +110,8 @@ proc parseJson5*(input: string): JTree =
   result = JTree(nodes: @[])
   p.next()
   if p.tok.kind == tkEoi:
-    p.l.error("An empty string is not valid JSON5")
+    p.l.error(0, "An empty string is not valid JSON5")
   discard parseValue(p, result)
 
   if p.tok.kind != tkEoi:
-    p.l.error(p.tok.pos, "Unexpected character: " &
-      characterAt(p.l.input, p.tok.pos))
+    p.l.error(p.tok.pos, "Expected end of input but found: " & $p.tok)

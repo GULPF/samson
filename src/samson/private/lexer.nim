@@ -101,9 +101,6 @@ proc linecolstr(str: string, pos: Natural): string =
 
   return "[Ln " & $line & ", Col " & $col & "]"
 
-proc error*(l: Lexer, msg: string) {.noreturn.} =
-  raise newException(JsonParseError, linecolstr(l.input, l.pos) & " " & msg)
-
 proc error*(l: Lexer, pos: int, msg: string) {.noreturn.} =
   raise newException(JsonParseError, linecolstr(l.input, pos) & " " & msg)
 
@@ -313,7 +310,7 @@ proc parseString(l: var Lexer): Token =
         l.pos.inc
       of '0':
         if l.pos + 1 < l.input.len and l.input[l.pos + 1] in Digits:
-          l.error("Unexpected character: " & l.input[l.pos + 1])
+          l.error(l.pos + 1, "Unexpected character: " & l.input[l.pos + 1])
         tok.strVal.add '\x00'
         l.pos.inc
       of '1'..'9':
@@ -348,14 +345,17 @@ proc parseIdentifier(l: var Lexer): Token =
     if l.eoi or l.head != 'u':
       l.error(l.pos - 1, "Unexpected character: \\")
     l.pos.inc
+    let runeStart = l.pos
     let rune = l.parseUnicodeHex(ndigits = 4)
     if not isIdentStart(rune):
-      l.error("Unexpected character.")
+      # TODO: Print rune as a unicode escape sequence instead
+      l.error(runeStart, "Invalid character at start of identifier: " & $rune)
     ident.add $rune
   else:
     let (rune, len) = l.uHead
     if not isIdentStart(rune):
-      l.error("Unexpected character: " & $rune.int)
+      # TODO: Print rune as a unicode escape sequence instead
+      l.error(l.pos, "Invalid character at start of identifier: " & $rune)
     l.pos.inc len
     ident.add $rune
 
@@ -365,6 +365,7 @@ proc parseIdentifier(l: var Lexer): Token =
       ident.add l.head
       l.pos.inc
     of '\\':
+      let startOfEscape = l.pos
       l.pos.inc
       if l.eoi or l.head != 'u':
         l.error(l.pos - 1, "Unexpected character: \\")
@@ -372,12 +373,12 @@ proc parseIdentifier(l: var Lexer): Token =
       var hexStr = ""
       for i in 0 .. 3:
         if l.eoi or l.input[l.pos] notin HexDigits:
-          l.error("Invalid unicode escape")
+          l.error(startOfEscape, "Invalid unicode escape sequence")
         hexStr.add l.input[l.pos]
         l.pos.inc
       let rune = parseHexInt(hexStr).Rune
       if not isIdentCont(rune):
-        l.error("Unexpected character: " & "\\u" & hexStr)
+        l.error(startOfEscape, "Unexpected character: " & "\\u" & hexStr)
       ident.add $rune
     else:
       let (rune, len) = l.uHead
@@ -451,6 +452,9 @@ proc tokenize*(input: string): seq[Token] =
       break
 
 proc `$`*(tok: Token): string =
+  # NOTE: This wont give the original string for some edge cases.
+  #       Maybe the token should also save a "len" field so that
+  #       the original string can be extracted.
   case tok.kind
   of tkBracketL: "["
   of tkBracketR: "]"
@@ -459,7 +463,7 @@ proc `$`*(tok: Token): string =
   of tkColon: ":"
   of tkComma: ","
   of tkString: '"' & tok.strVal & '"'
-  of tkNumber: $tok.numVal # NOTE: str->float->str might not give the original string
+  of tkNumber: $tok.numVal
   of tkInt64: $tok.int64Val
   of tkLineComment, tkBlockComment, tkEoi: raiseAssert("Unexpected token")
   of tkIdent: tok.ident

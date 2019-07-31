@@ -4,7 +4,7 @@
         "input": "0123"
     },
     "number-unexpected-char": {
-        "error": "[Ln 1, Col 4] Unexpected character: f",
+        "error": "[Ln 1, Col 4] Expected end of input but found: f",
         "input": "123f"
     },
     "comment-unclosed": {
@@ -42,5 +42,17 @@
     "string-unclosed": {
         "error": "[Ln 2, Col 1] Unclosed string",
         "input": "\n'foo"
+    },
+    "string-unclosed-2": {
+        "error": "[Ln 2, Col 1] Unclosed string",
+        "input": "\n'foo\n'"
+    },
+    "misc-eoi": {
+        "error": "[Ln 1, Col 6] Expected end of input but found: null",
+        "input": "null null"
+    },
+    "misc-empty-input": {
+        "error": "[Ln 1, Col 1] An empty string is not valid JSON5",
+        "input": ""
     }
 }
