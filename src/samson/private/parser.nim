@@ -2,11 +2,13 @@ import std / tables
 import jtrees, lexer
 
 type
-  Parser = object
-    l: Json5Lexer
+  Parser[T: Lexer] = object
+    l: T
     tok: Token
+    allowTrailingComma: bool
+    allowIdentifierObjectKey: bool
 
-proc next(p: var Parser) =
+template next(p: var Parser) =
   p.tok = p.l.next()
 
 proc parseValue(p: var Parser, jtree: var JTree): int =
@@ -28,10 +30,14 @@ proc parseValue(p: var Parser, jtree: var JTree): int =
         let nodeIdx = p.parseValue(jtree)
         jnode.items.add(nodeIdx)
         if p.tok.kind == tkComma:
+          let commaPos = p.tok.pos
           p.next()
           if p.tok.kind == tkBracketR:
-            p.next()
-            break
+            if p.allowTrailingComma:
+              p.next()
+              break
+            else:
+              p.l.error(commaPos, "Trailing comma")
         elif p.tok.kind == tkBracketR:
           p.next()
           break
@@ -50,9 +56,13 @@ proc parseValue(p: var Parser, jtree: var JTree): int =
         var key: string
         case p.tok.kind
         of tkString: shallowCopy(key, p.tok.strVal)
-        of tkIdent:  shallowCopy(key, p.tok.ident)
+        of tkIdent:
+          if p.allowIdentifierObjectKey:
+            shallowCopy(key, p.tok.ident)
+          else:
+            p.l.error(p.tok.pos, "Expected object key but found: " & $p.tok)          
         else:
-          p.l.error(p.tok.pos, "Expected string or identifier but found: " & $p.tok)
+          p.l.error(p.tok.pos, "Expected object key but found: " & $p.tok)
         p.next()
 
         if p.tok.kind != tkColon:
@@ -63,10 +73,14 @@ proc parseValue(p: var Parser, jtree: var JTree): int =
         jnode.kvpairs[key] = nodeIdx
 
         if p.tok.kind == tkComma:
+          let commaPos = p.tok.pos
           p.next()
           if p.tok.kind == tkBraceR:
-            p.next()
-            break
+            if p.allowTrailingComma:
+              p.next()
+              break
+            else:
+              p.l.error(commaPos, "Trailing comma")
         elif p.tok.kind == tkBraceR:
           p.next()
           break
@@ -106,7 +120,11 @@ proc parseValue(p: var Parser, jtree: var JTree): int =
     p.l.error(p.tok.pos, "Expected value but found: " & $p.tok)
 
 proc parseJson5*(input: string): JTree =
-  var p = Parser(l: initJson5Lexer(input))
+  var p = Parser[Json5Lexer](
+    l: initJson5Lexer(input),
+    allowTrailingComma: true,
+    allowIdentifierObjectKey: true
+  )
   result = JTree(nodes: @[])
   p.next()
   if p.tok.kind == tkEoi:

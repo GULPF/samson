@@ -28,7 +28,7 @@
         "input": "{xx: 1 yy: 2}"
     },
     "object-double-comma": {
-        "error": "[Ln 1, Col 7] Expected string or identifier but found: ,",
+        "error": "[Ln 1, Col 7] Expected object key but found: ,",
         "input": "{x: 1,, y: 2}"
     },
     "string-invalid-unicode-escape": {
