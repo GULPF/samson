@@ -57,6 +57,11 @@ const Json5UnicodeWhiteSpace = [
   0x3000.Rune, 0x00A0.Rune, 0xFEFF.Rune
 ]
 
+# https://tools.ietf.org/html/rfc8259#section-2
+const JsonWhitespace = [
+  0x0020.char, 0x0009.char, 0x000A.char, 0x000D.char
+]
+
 const LF* = 0x000A.char # Line feed
 const CR* = 0x000D.char # Carriage return
 const LS* = 0x2028.Rune # Line separator
@@ -125,19 +130,6 @@ proc isIdentCont(r: Rune): bool =
 proc error*(l: Lexer, pos: int, msg: string) {.noreturn.} =
   raise newException(JsonParseError, linecolstr(l.input, pos) & " " & msg)
 
-proc skipWhitespace(l: var Lexer) =
-  while not l.eoi:
-    if l.head in Json5AsciiWhiteSpace:
-      l.pos.inc
-    elif l.head >= 128.char:
-      let (rune, len) = l.uHead
-      if rune in Json5UnicodeWhiteSpace:
-        l.pos.inc len
-      else:
-        break
-    else:
-      break
-
 proc extractInteger(l: var Lexer, appendTo: var string) =
   while not l.eoi and l.head in Digits:
     appendTo.add l.head
@@ -182,7 +174,7 @@ macro startsWith(l: var Lexer, str: static[string]): bool =
 
 # Common
 
-proc parseComment(l: var Lexer) =
+proc parseComment(l: var Lexer, allowJson5Newlines: bool) =
   doAssert l.head == '/'
   l.pos.inc
   case l.head
@@ -190,8 +182,8 @@ proc parseComment(l: var Lexer) =
     l.pos.inc
     while true:
       if l.eoi or l.head in {LF, CR} or
-          # TODO: Should LS/PS be accepted here?
-          l.head >= 128.char and l.uHead[0] in [LS, PS]:
+          (allowJson5Newlines and l.head >= 128.char and
+            l.uHead[0] in [LS, PS]):
         return
       l.pos.inc
   of '*':
@@ -242,6 +234,19 @@ proc parseUEscape(l: var Lexer, appendTo: var string) =
   appendTo.add rune.toUtf8
 
 # JSON5 Lexer
+
+proc skipWhitespace(l: var Json5Lexer) =
+  while not l.eoi:
+    if l.head in Json5AsciiWhiteSpace:
+      l.pos.inc
+    elif l.head >= 128.char:
+      let (rune, len) = l.uHead
+      if rune in Json5UnicodeWhiteSpace:
+        l.pos.inc len
+      else:
+        break
+    else:
+      break
 
 proc parseNumber(l: var Json5Lexer): Token =
   var num: string
@@ -471,7 +476,7 @@ proc next*(l: var Json5Lexer): Token =
   of ':': singleCharToken(tkColon)
 
   of '/':
-    l.parseComment()
+    l.parseComment(allowJson5Newlines = true)
     result = l.next()
 
   of '"', '\'':
@@ -487,6 +492,13 @@ proc next*(l: var Json5Lexer): Token =
     result.pos = tokenStartPos
 
 # JSON Lexer
+
+proc skipWhitespace(l: var JsonLexer) =
+  while not l.eoi:
+    if l.head in JsonWhiteSpace:
+      l.pos.inc
+    else:
+      break
 
 proc parseNumber(l: var JsonLexer): Token =
   var num: string
@@ -646,7 +658,7 @@ proc next*(l: var JsonLexer): Token =
   of '/':
     if not l.allowComments:
       l.error(l.pos, "Comments are not allowed in strict JSON")
-    l.parseComment()
+    l.parseComment(allowJson5Newlines = false)
 
   of '"':
     result = l.parseString()
