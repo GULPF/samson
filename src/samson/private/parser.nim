@@ -3,7 +3,7 @@ import jtrees, lexer
 
 type
   Parser = object
-    l: Lexer
+    l: Json5Lexer
     tok: Token
 
 proc next(p: var Parser) =
@@ -106,7 +106,7 @@ proc parseValue(p: var Parser, jtree: var JTree): int =
     p.l.error(p.tok.pos, "Expected value but found: " & $p.tok)
 
 proc parseJson5*(input: string): JTree =
-  var p = Parser(l: initLexer(input))
+  var p = Parser(l: initJson5Lexer(input))
   result = JTree(nodes: @[])
   p.next()
   if p.tok.kind == tkEoi:

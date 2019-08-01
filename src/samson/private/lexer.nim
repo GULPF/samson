@@ -1,4 +1,4 @@
-import std / strutils
+import std / [strutils, macros]
 import xunicode, .. / errors
 
 type
@@ -31,9 +31,18 @@ type
       discard
     pos*: Natural
 
-  Lexer* = object
+  BaseLexer* = object of RootObj
     input*: string
     pos*: Natural
+
+  Json5Lexer* = object of BaseLexer
+
+  JsonLexer* = object of BaseLexer
+    allowComments*: bool
+    allowSpecialFloats*: bool
+  
+  # Workaround for https://github.com/nim-lang/Nim/issues/11861
+  Lexer* = Json5Lexer | JsonLexer
 
 # https://spec.json5.org/#white-space
 const Json5AsciiWhiteSpace = {
@@ -55,8 +64,13 @@ const PS* = 0x2029.Rune # Paragraph separator
 const ZWNJ = 0x200C.Rune # Zero width non-joiner
 const ZWJ  = 0x200D.Rune # Zero width jointer
 
-proc initLexer*(input: string): Lexer =
+proc initJson5Lexer*(input: string): Json5Lexer =
   result.input = input
+
+proc initJsonLexer*(input: string,
+    allowComments, allowSpecialFloats: bool): JsonLexer =
+  JsonLexer(input: input, allowComments: allowComments,
+    allowSpecialFloats: allowSpecialFloats)
 
 template head(l: Lexer): char =
   l.input[l.pos]
@@ -101,6 +115,13 @@ proc linecolstr(str: string, pos: Natural): string =
 
   return "[Ln " & $line & ", Col " & $col & "]"
 
+proc isIdentStart(r: Rune): bool =
+  return isLetter(r)
+
+proc isIdentCont(r: Rune): bool =
+  return isLetter(r) or isCombiningMark(r) or isDigit(r) or
+    isConnectorPunctuation(r) or r == ZWNJ or r == ZWJ
+
 proc error*(l: Lexer, pos: int, msg: string) {.noreturn.} =
   raise newException(JsonParseError, linecolstr(l.input, pos) & " " & msg)
 
@@ -117,16 +138,6 @@ proc skipWhitespace(l: var Lexer) =
     else:
       break
 
-proc characterAt*(str: string, pos: Natural): string =
-  str.runeAndLenAt(pos)[0].toUtf8
-
-proc isIdentStart(r: Rune): bool =
-  return isLetter(r)
-
-proc isIdentCont(r: Rune): bool =
-  return isLetter(r) or isCombiningMark(r) or isDigit(r) or
-    isConnectorPunctuation(r) or r == ZWNJ or r == ZWJ
-
 proc extractInteger(l: var Lexer, appendTo: var string) =
   while not l.eoi and l.head in Digits:
     appendTo.add l.head
@@ -140,6 +151,61 @@ proc extractInvalidNumber(str: string, start: int): string =
 
 proc extractInvalidUnicodeEscape(str: string, start: int): string =
   return str.substr(start, start + 5)
+
+proc `$`*(tok: Token): string =
+  # NOTE: This wont give the original string for some edge cases.
+  #       Maybe the token should also save a "len" field so that
+  #       the original string can be extracted.
+  case tok.kind
+  of tkBracketL: "["
+  of tkBracketR: "]"
+  of tkBraceL: "{"
+  of tkBraceR: "}"
+  of tkColon: ":"
+  of tkComma: ","
+  of tkString: '"' & tok.strVal & '"'
+  of tkNumber: $tok.numVal
+  of tkInt64: $tok.int64Val
+  of tkLineComment, tkBlockComment, tkEoi: raiseAssert("Unexpected token")
+  of tkIdent: tok.ident
+
+macro startsWith(l: var Lexer, str: static[string]): bool =
+  # Checks start of string without slicing to avoid allocations
+  result = newLit(true)
+  for it in countdown(str.high, 0):
+    let c = newLit(str[it])
+    let cond = quote do: `l`.input[`l`.pos + `it`] == `c` 
+    result = newTree(nnkInfix, bindSym"and", cond, result)
+  let identLen = newLit(str.len)
+  let firstCond = quote do: `l`.pos >= `l`.input.high - `identLen`
+  result = newTree(nnkInfix, bindSym"and", firstCond, result)
+
+# Common
+
+proc parseComment(l: var Lexer) =
+  doAssert l.head == '/'
+  l.pos.inc
+  case l.head
+  of '/':
+    l.pos.inc
+    while true:
+      if l.eoi or l.head in {LF, CR} or
+          # TODO: Should LS/PS be accepted here?
+          l.head >= 128.char and l.uHead[0] in [LS, PS]:
+        return
+      l.pos.inc
+  of '*':
+    let startPos = l.pos - 1
+    while true:
+      # Need two chars to end a block comment
+      if l.pos > l.input.high - 1:
+        l.error(startPos, "Unclosed block comment")
+      elif l.head == '*' and l.input[l.pos + 1] == '/':
+        l.pos.inc 2
+        return
+      l.pos.inc
+  else:
+    l.error(l.pos - 1, "Unexpected character: /")
 
 proc parseUnicodeHex(l: var Lexer, ndigits: int): Rune =
   let start = l.pos - 2
@@ -155,7 +221,29 @@ proc parseUnicodeHex(l: var Lexer, ndigits: int): Rune =
     l.pos.inc
   result = parseHexInt(hexStr).Rune
 
-proc parseNumber(l: var Lexer): Token =
+proc parseUEscape(l: var Lexer, appendTo: var string) =
+  doAssert l.head == '\\' and l.input[l.pos + 1] == 'u'
+  l.pos.inc 2
+  var rune: Rune
+  let high = l.parseUnicodeHex(ndigits = 4)
+  if high in SurrogateRange and
+      l.pos + 2 < l.input.len and
+      l.input[l.pos] == '\\' and l.input[l.pos + 1] == 'u':
+    l.pos.inc 2
+    let low = l.parseUnicodeHex(ndigits = 4)
+    if low in SurrogateRange:
+      rune = decodeSurrogates(high, low)
+    else:
+      # Backoff
+      l.pos.dec 6
+      rune = high
+  else:
+    rune = high
+  appendTo.add rune.toUtf8
+
+# JSON5 Lexer
+
+proc parseNumber(l: var Json5Lexer): Token =
   var num: string
   var isFloat = false
   var start = l.pos
@@ -172,22 +260,11 @@ proc parseNumber(l: var Lexer): Token =
     l.pos.inc
 
   # Infinity & NaN
-  if l.pos + 2 < l.input.len and
-      l.input[l.pos] == 'N' and
-      l.input[l.pos + 1] == 'a' and
-      l.input[l.pos + 2] == 'N':
+  if l.startsWith("NaN"):
     l.pos.inc 3
     return Token(kind: tkNumber, numVal: NaN)
 
-  if l.pos + 7 < l.input.len and
-      l.input[l.pos] == 'I' and
-      l.input[l.pos + 1] == 'n' and
-      l.input[l.pos + 2] == 'f' and
-      l.input[l.pos + 3] == 'i' and
-      l.input[l.pos + 4] == 'n' and
-      l.input[l.pos + 5] == 'i' and
-      l.input[l.pos + 6] == 't' and
-      l.input[l.pos + 7] == 'y':
+  if l.startsWith("Infinity"):
     l.pos.inc 8
     return Token(kind: tkNumber, numVal: sgn.float * Inf)
 
@@ -246,7 +323,7 @@ proc parseNumber(l: var Lexer): Token =
     else:
       Token(kind: tkInt64, int64Val: sgn * parseBiggestInt(num))
 
-proc parseString(l: var Lexer): Token =
+proc parseString(l: var Json5Lexer): Token =
   var tok = Token(kind: tkString)
   let terminator = l.head
   let startOfString = l.pos
@@ -264,23 +341,8 @@ proc parseString(l: var Lexer): Token =
         l.pos.inc
         tok.strVal.add l.parseUnicodeHex(ndigits = 2).toUtf8
       of 'u':
-        l.pos.inc
-        var rune: Rune
-        let high = l.parseUnicodeHex(ndigits = 4)
-        if high in SurrogateRange and
-            l.pos + 2 < l.input.len and
-            l.input[l.pos] == '\\' and l.input[l.pos + 1] == 'u':
-          l.pos.inc 2
-          let low = l.parseUnicodeHex(ndigits = 4)
-          if low in SurrogateRange:
-            rune = decodeSurrogates(high, low)
-          else:
-            # Backoff
-            l.pos.dec 6
-            rune = high
-        else:
-          rune = high
-        tok.strVal.add rune.toUtf8
+        l.pos.dec
+        l.parseUEscape(appendTo = tok.strVal)
       of '"', '\'', '\\':
         tok.strVal.add l.head
         l.pos.inc
@@ -334,7 +396,7 @@ proc parseString(l: var Lexer): Token =
       l.pos.inc len
   return tok
 
-proc parseIdentifier(l: var Lexer): Token =
+proc parseIdentifier(l: var Json5Lexer): Token =
   var ident = ""
   case l.head
   of { 'a' .. 'z', 'A' .. 'Z', '_', '$' }:
@@ -388,7 +450,7 @@ proc parseIdentifier(l: var Lexer): Token =
       ident.add $rune
   return Token(kind: tkIdent, ident: ident)
 
-proc next*(l: var Lexer): Token =
+proc next*(l: var Json5Lexer): Token =
   template singleCharToken(k: TokenKind) =
     l.pos.inc
     return Token(kind: k, pos: tokenStartPos)
@@ -409,27 +471,8 @@ proc next*(l: var Lexer): Token =
   of ':': singleCharToken(tkColon)
 
   of '/':
-    l.pos.inc
-    case l.head
-    of '/':
-      l.pos.inc
-      while true:
-        if l.eoi or l.head in {LF, CR} or
-            l.head >= 128.char and l.uHead[0] in [LS, PS]:
-          return l.next()
-        l.pos.inc
-    of '*':
-      let startPos = l.pos - 1
-      while true:
-        # Need two chars to end a block comment
-        if l.pos > l.input.high - 1:
-          l.error(startPos, "Unclosed block comment")
-        elif l.head == '*' and l.input[l.pos + 1] == '/':
-          l.pos.inc 2
-          return l.next()
-        l.pos.inc
-    else:
-      l.error(l.pos - 1, "Unexpected character: /")
+    l.parseComment()
+    result = l.next()
 
   of '"', '\'':
     result = l.parseString()
@@ -443,31 +486,176 @@ proc next*(l: var Lexer): Token =
     result = l.parseIdentifier()
     result.pos = tokenStartPos
 
-proc tokenize*(input: string): seq[Token] =
-  var l = initLexer(input)
+# JSON Lexer
+
+proc parseNumber(l: var JsonLexer): Token =
+  var num: string
+  var isFloat = false
+  var startOfNumber = l.pos
+  var sgn = 1
+
+  template error() =
+    l.error(startOfNumber, "Invalid number: " & extractInvalidNumber(l.input, startOfNumber))
+
+  # Sign
+  if l.head == '-':
+    sgn = -1
+    l.pos.inc
+  
+  # NOTE: Signed NaN is not allowed, even with `allowSpecialFloats`
+  if l.allowSpecialFloats and l.startsWith("Infinity"):
+    l.pos.inc 8
+    return Token(kind: tkNumber, numVal: sgn.float * Inf)
+
+  # Integer part
+  if l.head == '0':
+    num.add '0'
+    l.pos.inc
+    if l.eoi:
+      return Token(kind: tkInt64, int64Val: 0)
+    if l.head in Digits:
+      error()
+  elif l.head in {'1' .. '9'}:
+    l.extractInteger(appendTo = num)
+
+  # Float part
+  if not l.eoi and l.head == '.':
+    isFloat = true
+    num.add '.'
+    l.pos.inc
+    # NOTE: Unlike JSON5, JSON never allows a trailing '.'
+    if l.head notin Digits:
+      error()
+    l.extractInteger(appendTo = num)
+
+  # Exponent part
+  if not l.eoi and l.head in {'e', 'E'}:
+    isFloat = true
+    num.add 'e'
+    l.pos.inc
+    if l.eoi:
+      error()
+    if l.head in {'+', '-'}:
+      num.add l.head
+      l.pos.inc
+    if l.eoi or l.head notin Digits:
+      error()
+    l.extractInteger(appendTo = num)
+
+  result =
+    if isFloat:
+      let f = parseFloat(num)
+      if f <= float(high(int64)) and f >= float(low(int64)) and
+          f == float(int64(f)):
+        Token(kind: tkInt64, int64Val: sgn * int64(f))
+      else:
+        Token(kind: tkNumber, numVal: sgn.float * f)
+    else:
+      Token(kind: tkInt64, int64Val: sgn * parseBiggestInt(num))
+
+proc parseString(l: var JsonLexer): Token =
+  doAssert l.head == '"'
+  var tok = Token(kind: tkString)
+  let startOfString = l.pos
+  l.pos.inc
   while true:
-    let tok = l.next()
-    result.add tok
-    if tok.kind == tkEoi:
+    if l.pos > l.input.high:
+      l.error(startOfString, "Unclosed string")
+    elif l.head == '"':
+      l.pos.inc
       break
+    elif l.head == '\\':
+      l.pos.inc
+      case l.head
+      of 'u':
+        l.pos.dec
+        l.parseUEscape(appendTo = tok.strVal)
+      of '"', '\\':
+        tok.strVal.add l.head
+        l.pos.inc
+      of 'b':
+        tok.strVal.add '\x08'
+        l.pos.inc
+      of 'f':
+        tok.strVal.add '\x0C'
+        l.pos.inc
+      of 'n':
+        tok.strVal.add '\x0A'
+        l.pos.inc
+      of 'r':
+        tok.strVal.add '\x0D'
+        l.pos.inc
+      of 't':
+        tok.strVal.add '\x09'
+        l.pos.inc
+      else:
+        l.error(l.pos - 1, "Invalid escape: \\" & l.head)
+    elif l.head <= 127.char:
+      if l.head in {LF, CR}:
+        l.error(startOfString, "Unclosed string")
+      tok.strVal.add l.head
+      l.pos.inc
+    else:
+      let (rune, len) = l.input.runeAndLenAt(l.pos)
+      tok.strVal.add rune.toUtf8
+      l.pos.inc len
+  return tok
 
-proc `$`*(tok: Token): string =
-  # NOTE: This wont give the original string for some edge cases.
-  #       Maybe the token should also save a "len" field so that
-  #       the original string can be extracted.
-  case tok.kind
-  of tkBracketL: "["
-  of tkBracketR: "]"
-  of tkBraceL: "{"
-  of tkBraceR: "}"
-  of tkColon: ":"
-  of tkComma: ","
-  of tkString: '"' & tok.strVal & '"'
-  of tkNumber: $tok.numVal
-  of tkInt64: $tok.int64Val
-  of tkLineComment, tkBlockComment, tkEoi: raiseAssert("Unexpected token")
-  of tkIdent: tok.ident
+proc parseIdentifier(l: var JsonLexer): Token =
+  # In strict JSON, `true`, `false`, and `null` are the only idents.
+  if l.startsWith("true"):
+    l.pos.inc 4
+    return Token(kind: tkIdent, ident: "true")
+  elif l.startsWith("false"):
+    l.pos.inc 4
+    return Token(kind: tkIdent, ident: "false")
+  elif l.startsWith("null"):
+    l.pos.inc 4
+    return Token(kind: tkIdent, ident: "null")
+  elif l.allowSpecialFloats:
+    if l.startsWith("NaN"):
+      l.pos.inc 3
+      return Token(kind: tkNumber, numVal: NaN)
+    elif l.startsWith("Infinity"):
+      return Token(kind: tkNumber, numVal: Inf)
+    else:
+      l.error(l.pos, "Unexpected character: " & l.head)
+  else:
+    l.error(l.pos, "Unexpected character: " & l.head)
 
-proc `$`*(x: seq[Token]): string =
-  for t in x:
-    result.add $t & "\n"
+proc next*(l: var JsonLexer): Token =
+  template singleCharToken(k: TokenKind) =
+    l.pos.inc
+    return Token(kind: k, pos: tokenStartPos)
+
+  l.skipWhitespace()
+  let tokenStartPos = l.pos
+
+  if l.eoi:
+    l.pos = l.input.high + 1
+    return Token(kind: tkEoi, pos: tokenStartPos)
+
+  case l.head
+  of '[': singleCharToken(tkBracketL)
+  of ']': singleCharToken(tkBracketR)
+  of '{': singleCharToken(tkBraceL)
+  of '}': singleCharToken(tkBraceR)
+  of ',': singleCharToken(tkComma)
+  of ':': singleCharToken(tkColon)
+
+  of '/':
+    if not l.allowComments:
+      l.error(l.pos, "Comments are not allowed in strict JSON")
+    l.parseComment()
+
+  of '"':
+    result = l.parseString()
+    result.pos = tokenStartPos
+
+  of Digits, '-':
+    result = l.parseNumber()
+    result.pos = tokenStartPos
+
+  else:
+    result = l.parseIdentifier()
+    result.pos = tokenStartPos
