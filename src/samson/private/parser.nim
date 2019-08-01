@@ -119,12 +119,7 @@ proc parseValue(p: var Parser, jtree: var JTree): int =
   else:
     p.l.error(p.tok.pos, "Expected value but found: " & $p.tok)
 
-proc parseJson5*(input: string): JTree =
-  var p = Parser[Json5Lexer](
-    l: initJson5Lexer(input),
-    allowTrailingComma: true,
-    allowIdentifierObjectKey: true
-  )
+template parseImpl(p: var Parser) =
   result = JTree(nodes: @[])
   p.next()
   if p.tok.kind == tkEoi:
@@ -133,3 +128,24 @@ proc parseJson5*(input: string): JTree =
 
   if p.tok.kind != tkEoi:
     p.l.error(p.tok.pos, "Expected end of input but found: " & $p.tok)
+
+proc parseJson5*(input: string): JTree =
+  var p = Parser[Json5Lexer](
+    l: initJson5Lexer(input),
+    allowTrailingComma: true,
+    allowIdentifierObjectKey: true
+  )
+  parseImpl(p)
+
+proc parseJson*(input: string,
+    allowComments: bool,
+    allowSpecialFloats: bool,
+    allowTrailingComma: bool): JTree =
+  let l = initJsonLexer(input,
+    allowComments, allowSpecialFloats)
+  var p = Parser[JsonLexer](
+    l: l,
+    allowTrailingComma: allowTrailingComma,
+    allowIdentifierObjectKey: false
+  )
+  parseImpl(p)
