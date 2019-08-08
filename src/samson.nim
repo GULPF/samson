@@ -97,6 +97,7 @@ proc addJsonString(result: var string, value: string) =
     of '\x0C':
       result.add "\\f"
       pos.inc
+    # TODO: This escape doesn't exist in JSON
     of '\x0A':
       result.add "\\n"
       pos.inc
@@ -134,10 +135,13 @@ proc addJsonDateTime(result: var string, value: DateTime|Time,
     f = DefaultDateTimeFormat) =
   result.addJsonString value.utc.format(f)
 
-proc addJson[T](result: var string, value: T, opts: ToJsonOpts) =
+proc addJson[T](result: var string, value: T, opts: ToJsonOpts, currIndent: int) =
+  template indent(len: int): string {.used.} = ' '.repeat(len)
+  template pretty: bool {.used.} = opts.indent > 0
+
   when T is Option:
     if value.isSome:
-      result.addJson(value.get, opts)
+      result.addJson(value.get, opts, currIndent)
     else:
       result.add "null"
   elif T is JsonValue:
@@ -147,20 +151,20 @@ proc addJson[T](result: var string, value: T, opts: ToJsonOpts) =
     of jsonInteger:
       result.add $value.getInt64
     of jsonFloat:
-      result.addJson(value.getFloat, opts)
+      result.addJson(value.getFloat, opts, currIndent)
     of jsonString:
-      result.addJson(value.getString, opts)
+      result.addJson(value.getString, opts, currIndent)
     of jsonArray:
-      result.addJson(value.getSeq, opts)
+      result.addJson(value.getSeq, opts, currIndent)
     of jsonObject:
-      result.addJson(value.getTable, opts)
+      result.addJson(value.getTable, opts, currIndent)
   elif T is Either:
     type A = T.generic(0)
     type B = T.generic(1)
     if value.isType(A):
-      result.addJson(value.get(A), opts)
+      result.addJson(value.get(A), opts, currIndent)
     else:
-      result.addJson(value.get(B), opts)
+      result.addJson(value.get(B), opts, currIndent)
   elif T is bool:
     result.add $value
   elif T is SupportedIntegerTypes:
@@ -184,18 +188,24 @@ proc addJson[T](result: var string, value: T, opts: ToJsonOpts) =
     result.add $value.int
   elif T is Table|OrderedTable:
     result.add "{"
+    if pretty:
+      result.add "\n"
     for k, v in value:
-      result.addJson(k, opts)
+      if pretty:
+        result.add indent(currIndent + opts.indent)
+      result.addJson(k, opts, currIndent + opts.indent)
       result.add ": "
-      result.addJson(v, opts)
+      result.addJson(v, opts, currIndent + opts.indent)
       result.add ", "
     if value.len > 0:
       result.setLen(result.len - 2)
+    if pretty:
+      result.add "\n" & indent(currIndent)
     result.add "}"
   elif T is seq|array|set|HashSet|OrderedSet:
     result.add "["
     for v in value:
-      result.addJson(v, opts)
+      result.addJson(v, opts, currIndent)
       result.add ", "
     if value.len > 0:
       result.setLen(result.len - 2)
@@ -207,11 +217,17 @@ proc addJson[T](result: var string, value: T, opts: ToJsonOpts) =
   elif T is char:
     result.addJsonString($value)
   elif T is PlainObject:
+    var hasFields = false
     result.add "{"
+    if pretty:
+      result.add "\n"
     for fieldName, fieldSym in value.fieldPairs:
       if not shouldExcludeField(fieldSym):
+        hasFields = true
         let resolvedFieldName = resolveFieldName(fieldName, fieldSym)
-        result.addJson(resolvedFieldName, opts)
+        if pretty:
+          result.add indent(currIndent + opts.indent)
+        result.addJson(resolvedFieldName, opts, currIndent)
         result.add ": "
         when type(fieldSym) is DateTime|Time:
           const f = resolveDateTimeFormat(fieldSym)
@@ -220,14 +236,24 @@ proc addJson[T](result: var string, value: T, opts: ToJsonOpts) =
             hasCustomPragma(fieldSym, jsonStringEnum):
           result.addJsonString $fieldSym
         else:
-          result.addJson(fieldSym, opts)
-        result.add ", "
-    result.setLen(result.len - 2)
+          result.addJson(fieldSym, opts, currIndent + opts.indent)
+        if pretty:
+          result.add ",\n"
+        else:
+          result.add ", "
+    if hasFields:
+      if pretty:
+        discard
+        result.delete(result.high - 1, result.high - 1)
+      else:
+        result.setLen(result.len - 2)
+    if pretty:
+      result.add indent(currIndent)
     result.add "}"
   elif T is tuple:
     result.add "["
     for val in value.fields:
-      result.addJson(val, opts)
+      result.addJson(val, opts, currIndent)
       result.add ", "
     result.setLen(result.len - 2)
     result.add "]"
@@ -235,7 +261,7 @@ proc addJson[T](result: var string, value: T, opts: ToJsonOpts) =
     {.error: "Unsupported type: " & $T.}
 
 # This needs to be implemented as an overload due to limitations in Nim
-proc addJson(result: var string, value: type(nil), opts: ToJsonOpts) =
+proc addJson(result: var string, value: type(nil), opts: ToJsonOpts, currIndent: var int) =
   result.add "null"
 
 proc toJson5*[T](value: T): string =
@@ -250,17 +276,19 @@ proc toJson5*[T](value: T): string =
     doAssert toJson5(obj) == """{"field1": 1234, "field2": "foobar"}"""
     ## 'NaN' is not valid in JSON, but in JSON5 it is!
     doAssert toJson5(NaN) == "NaN"
-  result.addJson(value, ToJsonOpts(allowSpecialFloats: true, indent: 0))
+  result.addJson(value, ToJsonOpts(allowSpecialFloats: true, indent: 0), 0)
 
 proc toJson5*[T](value: T, opts: ToJson5Opts): string =
   let opts = ToJsonOpts(allowSpecialFloats: true, indent: opts.indent)
-  result.addJson(value, opts)
+  result.addJson(value, opts, 0)
 
 proc toJson*[T](value: T): string =
-  result.addJson(value, ToJsonOpts(allowSpecialFloats: true, indent: 0))
+  var currIndent: int  
+  result.addJson(value, ToJsonOpts(allowSpecialFloats: true, indent: 0), currIndent)
 
 proc toJson*[T](value: T, opts: ToJsonOpts): string =
-  result.addJson(value, opts)
+  var currIndent: int  
+  result.addJson(value, opts, currIndent)
 
 # JSON5->Nim
 

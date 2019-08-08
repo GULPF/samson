@@ -162,7 +162,7 @@ proc `$`*(tok: Token): string =
   of tkIdent: tok.ident
 
 macro startsWith(l: var Lexer, str: static[string]): bool =
-  # Checks start of string without slicing to avoid allocations
+  ## Checks start of string without slicing to avoid allocations
   result = newLit(true)
   for it in countdown(str.high, 0):
     let c = newLit(str[it])
